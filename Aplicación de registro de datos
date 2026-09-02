@@ -1,0 +1,91 @@
+import streamlit as st
+import pandas as pd
+import sqlite3
+from datetime import date
+
+# 1. Configuración de la página
+st.set_page_config(page_title="Control de Gastos Familiares", page_icon="💰", layout="centered")
+
+# 2. Conexión y creación de la base de datos
+conn = sqlite3.connect("gastos_familia.db", check_same_thread=False)
+c = conn.cursor()
+
+c.execute('''
+    CREATE TABLE IF NOT EXISTS gastos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        fecha TEXT,
+        usuario TEXT,
+        categoria TEXT,
+        monto REAL,
+        descripcion TEXT
+    )
+''')
+conn.commit()
+
+# 3. Encabezado de la aplicación
+st.title("💰 Registro de Gastos Familiares")
+st.write("Registra tus gastos diarios para mantener el control financiero del hogar.")
+
+# Opciones de configuración
+FAMILIARES = ["José", "Mamá", "Papá", "Hermano"]
+CATEGORIAS = ["Alimentación", "Servicios", "Transporte", "Entretenimiento", "Salud", "Varios"]
+
+# 4. Formulario de registro
+st.header("📝 Registrar Nuevo Gasto")
+
+with st.form(key="form_gasto", clear_on_submit=True):
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        usuario = st.selectbox("¿Quién realizó el gasto?", FAMILIARES)
+        categoria = st.selectbox("Categoría", CATEGORIAS)
+        fecha = st.date_input("Fecha", value=date.today())
+        
+    with col2:
+        monto = st.number_input("Monto ($)", min_value=0.0, step=0.5, format="%.2f")
+        descripcion = st.text_input("Descripción (opcional)", placeholder="Ej. Compra de verduras")
+        
+    submit = st.form_submit_button(label="Guardar Gasto")
+
+if submit:
+    if monto > 0:
+        c.execute(
+            "INSERT INTO gastos (fecha, usuario, categoria, monto, descripcion) VALUES (?, ?, ?, ?, ?)",
+            (str(fecha), usuario, categoria, monto, descripcion)
+        )
+        conn.commit()
+        st.success(f"✅ Gasto de ${monto:.2f} registrado correctamente para {usuario}.")
+    else:
+        st.error("El monto debe ser mayor a 0.")
+
+st.markdown("---")
+
+# 5. Visualización y Resumen
+st.header("📊 Resumen de Gastos")
+
+# Cargar datos desde la BD a un dataframe
+df = pd.read_sql_query("SELECT fecha, usuario, categoria, monto, descripcion FROM gastos", conn)
+
+if not df.empty():
+    # Métricas principales
+    total_general = df["monto"].sum()
+    st.metric(label="Total Gastado", value=f"${total_general:,.2f}")
+    
+    # Gráfico y Filtros
+    col_g1, col_g2 = st.columns(2)
+    
+    with col_g1:
+        st.subheader("Por Integrante")
+        gastos_por_usuario = df.groupby("usuario")["monto"].sum()
+        st.bar_chart(gastos_por_usuario)
+        
+    with col_g2:
+        st.subheader("Por Categoría")
+        gastos_por_cat = df.groupby("categoria")["monto"].sum()
+        st.bar_chart(gastos_por_cat)
+        
+    # Tabla detallada
+    st.subheader("Historial Registrado")
+    st.dataframe(df.sort_values(by="fecha", ascending=False), use_container_width=True)
+else:
+    st.info("Aún no hay gastos registrados. ¡Añade el primero usando el formulario!")
